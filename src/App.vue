@@ -1,9 +1,10 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { toPng } from 'html-to-image'
-import { Download, FileText, HelpCircle, History, LayoutTemplate, Plus, RotateCcw, Sparkles, Upload } from 'lucide-vue-next'
+import { ChevronDown, Download, FileText, HelpCircle, History, LayoutTemplate, Plus, RotateCcw, Sparkles, Upload } from 'lucide-vue-next'
 
 const page = ref('editor')
+const syntaxGuideOpen = ref(true)
 const changelog = [
   {
     version: '1.3.0',
@@ -112,6 +113,30 @@ function parseMarkdown(source) {
   return { title, subtitle, links, lanes: lanes.length ? lanes : [{ name: 'Timeline', color: '#f5a6ad', events: [] }] }
 }
 function position(value) { return ((value - range.value.min) / (range.value.max - range.value.min)) * 100 }
+
+// Must match the lane layout constants in style.css (label + caption zone + track + gutter).
+const LANE_LABEL_H = 24
+const LANE_ZONE_H = 84
+const LANE_TRACK_H = 20
+const LANE_GUTTER_H = 56
+const LANE_ROW_H = LANE_LABEL_H + LANE_ZONE_H + LANE_TRACK_H + LANE_GUTTER_H
+const LANE_TRACK_CENTER = LANE_LABEL_H + LANE_ZONE_H + LANE_TRACK_H / 2
+
+const connectors = computed(() => {
+  const lanes = parsed.value.lanes
+  const laneIndexOf = id => lanes.findIndex(lane => lane.events.some(event => event.id === id))
+  const eventById = id => { for (const lane of lanes) { const found = lane.events.find(event => event.id === id); if (found) return found } return null }
+  return parsed.value.links.map(link => {
+    const fromIndex = laneIndexOf(link.from)
+    const toIndex = laneIndexOf(link.to)
+    const fromEvent = eventById(link.from)
+    if (fromIndex === -1 || toIndex === -1 || toIndex <= fromIndex || !fromEvent) return null
+    const top = fromIndex * LANE_ROW_H + LANE_TRACK_CENTER
+    const bottom = toIndex * LANE_ROW_H + LANE_TRACK_CENTER
+    return { id: `${link.from}-${link.to}`, left: position(fromEvent.position), top, height: bottom - top }
+  }).filter(Boolean)
+})
+
 function laneStart(lane) { return lane.events.length ? Math.min(...lane.events.map(event => event.position)) : range.value.min }
 function lanePosition(value, lane) {
   const start = laneStart(lane)
@@ -160,11 +185,16 @@ watch(markdown, () => { localStorage.setItem('timeline-md-draft', markdown.value
       <section class="content">
         <div class="page-heading"><div><p class="eyebrow">VISUAL PLANNING TOOL</p><h1>Build your timeline<span class="heading-dot">.</span></h1><p class="subheading">Write simple Markdown. See your story unfold.</p></div><div class="page-actions"><label class="btn secondary"><Upload :size="16" /> Import .md<input type="file" accept=".md,.markdown,text/markdown" @change="loadFile" hidden /></label><button class="btn primary" @click="exportPng"><Download :size="16" /> Export PNG</button></div></div>
         <div class="editor-pane">
-          <div class="editor-card"><div class="editor-head"><div class="source-heading"><strong>Story source</strong><span class="language-pill">MARKDOWN</span><label class="inline-action">Import .md<input type="file" accept=".md,.markdown,text/markdown" @change="loadFile" hidden /></label><button class="inline-action" @click="exportMarkdown">Export .md</button></div></div><textarea v-model="markdown" spellcheck="false" aria-label="Markdown timeline source"></textarea><div class="syntax-help"><span>Tip</span> Use <code>[-300] A1: Event name &gt; detail</code> and <code>## Lane | #color</code>.</div></div>
+          <div class="editor-card"><div class="editor-head"><div class="source-heading"><strong>Story source</strong><span class="language-pill">MARKDOWN</span><label class="inline-action">Import .md<input type="file" accept=".md,.markdown,text/markdown" @change="loadFile" hidden /></label><button class="inline-action" @click="exportMarkdown">Export .md</button></div></div><textarea v-model="markdown" spellcheck="false" aria-label="Markdown timeline source"></textarea><div class="syntax-guide"><button class="syntax-guide-toggle" @click="syntaxGuideOpen = !syntaxGuideOpen"><ChevronDown :size="14" :class="{ collapsed: !syntaxGuideOpen }" /> Quick syntax guide</button><pre v-show="syntaxGuideOpen" class="syntax-guide-body"># Title
+&gt; Subtitle
+## Lane | #hexcolor
+- [-300] ID: Event — Note
+- [+450] ID: Event — Note
+@link ID1 -&gt; ID2</pre></div></div>
         </div>
         <div class="preview-pane">
           <div class="preview-heading"><div><h2>Live preview</h2><p>{{ parsed.lanes.reduce((n, l) => n + l.events.length, 0) }} events · positions relative to first event</p></div><div class="preview-actions"><div class="range-label">{{ range.min }} <span>→</span> {{ range.max }} <small>units</small></div><button class="preview-export" @click="exportPng"><Download :size="14" /> Export PNG</button></div></div>
-          <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div v-if="parsed.subtitle" class="timeline-subtitle">{{ parsed.subtitle }}</div><div class="timeline-scroll"><div class="timeline-canvas" :style="{ minWidth: Math.max(720, ticks.length * 86) + 'px' }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div v-for="(lane, index) in parsed.lanes" :key="lane.name + index" class="lane"><div class="lane-label" :style="{ marginLeft: position(laneStart(lane)) + '%' }"><span>{{ lane.name }}</span><em v-if="lane.events.length">starts {{ laneStart(lane) > 0 ? '+' + laneStart(lane) : laneStart(lane) }}</em></div><div class="lane-track" :style="{ backgroundColor: lane.color + '88', marginLeft: position(laneStart(lane)) + '%', width: (100 - position(laneStart(lane))) + '%' }"><div v-for="event in lane.events" :key="event.id" class="event" :class="eventEdge(event, lane)" :style="{ left: lanePosition(event.position, lane) + '%' }"><div class="event-label"><b>{{ event.id }}</b><strong>{{ eventTitle(event.label) }}</strong><small>{{ eventDetail(event.label) }}</small></div><div class="event-node" :style="{ backgroundColor: lane.color }"></div></div></div><div v-if="index < parsed.lanes.length - 1" class="connector-layer"><div v-for="link in parsed.links.filter(item => parsed.lanes[index].events.some(e => e.id === item.from))" :key="'c' + link.from" class="connector" :style="{ left: position(parsed.lanes[index].events.find(e => e.id === link.from)?.position || 0) + '%' }"><span></span></div></div></div></div></div><div v-if="!parsed.lanes.some(l => l.events.length)" class="empty-state">Add events in Markdown to see them here.</div></div>
+          <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div v-if="parsed.subtitle" class="timeline-subtitle">{{ parsed.subtitle }}</div><div class="timeline-scroll"><div class="timeline-canvas" :style="{ minWidth: Math.max(720, ticks.length * 86) + 'px' }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div class="lanes-wrap"><div v-for="(lane, index) in parsed.lanes" :key="lane.name + index" class="lane"><div class="lane-label" :style="{ marginLeft: position(laneStart(lane)) + '%' }"><span>{{ lane.name }}</span><em v-if="lane.events.length">starts {{ laneStart(lane) > 0 ? '+' + laneStart(lane) : laneStart(lane) }}</em></div><div class="lane-track" :style="{ backgroundColor: lane.color + '88', marginLeft: position(laneStart(lane)) + '%', width: (100 - position(laneStart(lane))) + '%' }"><div v-for="event in lane.events" :key="event.id" class="event" :class="eventEdge(event, lane)" :style="{ left: lanePosition(event.position, lane) + '%' }"><div class="event-label"><b>{{ event.id }}</b><strong>{{ eventTitle(event.label) }}</strong><small>{{ eventDetail(event.label) }}</small></div><div class="event-node" :style="{ backgroundColor: lane.color }"></div></div></div></div><div class="connector-overlay"><div v-for="c in connectors" :key="c.id" class="connector" :style="{ left: c.left + '%', top: c.top + 'px', height: c.height + 'px' }"><span></span></div></div></div></div></div><div v-if="!parsed.lanes.some(l => l.events.length)" class="empty-state">Add events in Markdown to see them here.</div></div>
         </div>
       </section>
     </main>

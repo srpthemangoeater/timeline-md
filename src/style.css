@@ -74,7 +74,7 @@ body { margin: 0; background: #f4eeea; }
   border: 1px solid #cdbfc0; background: #fff; color: var(--maroon);
   border-radius: 6px; padding: 6px 9px; font: 600 10px Manrope; cursor: pointer;
 }
-.source-heading .inline-action:first-of-type { margin-left: auto; }
+.source-heading label.inline-action { margin-left: auto; }
 .editor-card textarea {
   display: block; width: 100%; height: 560px; resize: vertical;
   border: 1px solid #d8cec9; border-radius: 12px; background: #fff; color: #263657;
@@ -82,9 +82,21 @@ body { margin: 0; background: #f4eeea; }
   box-shadow: 0 1px 2px rgba(108, 53, 68, .08);
   margin-top: 12px;
 }
-.syntax-help { padding: 10px 2px 0; color: #887b80; font-size: 10px; }
-.syntax-help span { color: var(--maroon); font-weight: 700; margin-right: 6px; }
-.syntax-help code, .format-note code { font-family: 'DM Mono'; color: var(--maroon); background: #f9e9e9; padding: 1px 4px; border-radius: 3px; }
+.syntax-guide { margin-top: 12px; }
+.syntax-guide-toggle {
+  display: flex; align-items: center; gap: 6px;
+  border: 0; background: none; padding: 6px 2px;
+  font: 700 11px Manrope; color: var(--maroon); cursor: pointer;
+}
+.syntax-guide-toggle svg { transition: transform .15s ease; }
+.syntax-guide-toggle svg.collapsed { transform: rotate(-90deg); }
+.syntax-guide-body {
+  margin: 8px 0 0; padding: 12px 14px;
+  background: #fff; border: 1px solid #e6dbd8; border-radius: 8px;
+  font: 11px/1.8 'DM Mono', monospace; color: #453540;
+  white-space: pre-wrap; word-break: break-word;
+}
+.format-note code { font-family: 'DM Mono'; color: var(--maroon); background: #f9e9e9; padding: 1px 4px; border-radius: 3px; }
 
 /* Preview column */
 .preview-pane { flex: 1; min-width: 0; padding: 32px 28px 60px 24px; }
@@ -127,22 +139,24 @@ body { margin: 0; background: #f4eeea; }
 .axis { height: 24px; position: relative; border-bottom: 1px solid #f1e6e4; margin-bottom: 8px; }
 .tick { position: absolute; transform: translateX(-50%); top: 0; color: var(--maroon); font: 500 9px 'DM Mono'; opacity: .65; }
 
-/* --- Lane layout constants ---
-   label row  : 22px, own flow
-   caption zone: 58px reserved above the track for the event card
-   track      : 20px
-   gutter     : 54px reserved below the track for connector arrows
+/* --- Lane layout constants (kept in sync with the JS constants in App.vue) ---
+   label row   : 24px, own flow
+   caption zone: 84px reserved above the track for the event card
+   track       : 20px
+   gutter      : 56px reserved below the track for connector arrows
+   row height  : 24 + 84 + 20 + 56 = 184px per lane
 */
-.lane { position: relative; min-height: 100px; margin-bottom: 54px; }
+.lanes-wrap { position: relative; }
+.lane { position: relative; min-height: 128px; margin-bottom: 56px; }
 .lane:last-child { margin-bottom: 0; }
 .lane-label {
-  height: 22px; display: flex; align-items: center; gap: 8px;
+  height: 24px; display: flex; align-items: center; gap: 8px;
   color: #926274; font: 700 10px Manrope; letter-spacing: 1px;
   white-space: nowrap; position: relative; z-index: 3;
 }
 .lane-label em { font: 9px 'DM Mono'; font-style: normal; color: #b7a2a8; letter-spacing: 0; margin-left: 4px; }
 .lane-track {
-  margin-top: 58px;
+  margin-top: 84px;
   height: 20px; border-radius: 10px; position: relative;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4);
   z-index: 1;
@@ -153,7 +167,7 @@ body { margin: 0; background: #f4eeea; }
 
 .event-label {
   position: absolute;
-  bottom: 20px;
+  bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
   width: 190px;
@@ -179,15 +193,8 @@ body { margin: 0; background: #f4eeea; }
 .event.edge-left .event-label { left: 0; transform: none; }
 .event.edge-right .event-label { left: auto; right: 0; transform: none; }
 
-.connector-layer {
-  position: absolute;
-  left: 0; right: 0;
-  top: 100px; /* 22 (label) + 58 (caption zone) + 20 (track) */
-  height: 54px;
-  pointer-events: none;
-  z-index: 2;
-}
-.connector { position: absolute; top: 0; height: 54px; border-left: 2px dashed #c48ca3; }
+.connector-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.connector { position: absolute; border-left: 2px dashed #c48ca3; }
 .connector span {
   position: absolute; bottom: -1px; left: -5px;
   border-left: 5px solid transparent; border-right: 5px solid transparent;
