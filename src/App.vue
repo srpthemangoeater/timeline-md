@@ -1,0 +1,93 @@
+<script setup>
+import { computed, nextTick, ref, watch } from 'vue'
+import { toPng } from 'html-to-image'
+import { Download, FileText, Github, HelpCircle, LayoutTemplate, Plus, RotateCcw, Save, Sparkles, Trash2, Upload, X } from 'lucide-vue-next'
+
+const starter = `# Product launch
+
+## Act 1 — Discovery
+- [A1] Research begins @ -2
+- [A2] Direction approved @ 4
+
+## Act 2 — Build
+- [B1] First prototype @ -2
+- [B2] Beta release @ 12
+
+## Act 3 — Launch
+- [C1] Final polish @ 4
+- [C2] Public launch @ 12`
+
+const markdown = ref(localStorage.getItem('timeline-md-content') || starter)
+const fileName = ref(localStorage.getItem('timeline-md-name') || 'product-launch.md')
+const activeTab = ref('editor')
+const notice = ref('')
+const timelineEl = ref(null)
+
+const parsed = computed(() => parseMarkdown(markdown.value))
+const range = computed(() => {
+  const values = parsed.value.lanes.flatMap(lane => lane.events.map(event => event.position))
+  if (!values.length) return { min: -4, max: 16 }
+  const min = Math.min(...values), max = Math.max(...values)
+  return { min: Math.min(0, min), max: Math.max(10, max) }
+})
+const ticks = computed(() => {
+  const result = []
+  for (let i = range.value.min; i <= range.value.max; i += 2) result.push(i)
+  return result
+})
+const saved = computed(() => localStorage.getItem('timeline-md-content') === markdown.value)
+
+function parseMarkdown(source) {
+  const lines = source.split(/\r?\n/)
+  const title = (lines.find(line => /^# /.test(line)) || '# Untitled timeline').replace(/^# /, '').trim()
+  const lanes = []
+  let lane = null
+  for (const line of lines) {
+    const heading = line.match(/^##\s+(.+)/)
+    if (heading) { lane = { name: heading[1].replace(/\s+—\s+/g, ' / '), events: [] }; lanes.push(lane); continue }
+    const event = line.match(/^\s*-\s+(?:\[([^\]]+)\]\s*)?(.+?)(?:\s+@\s*(-?\d+(?:\.\d+)?))?\s*$/)
+    if (event) {
+      if (!lane) { lane = { name: 'Timeline', events: [] }; lanes.push(lane) }
+      lane.events.push({ id: event[1] || `E${lane.events.length + 1}`, label: event[2], position: Number(event[3] ?? lane.events.length * 2) })
+    }
+  }
+  return { title, lanes: lanes.length ? lanes : [{ name: 'Timeline', events: [] }] }
+}
+function position(value) { return ((value - range.value.min) / (range.value.max - range.value.min)) * 100 }
+function save() { localStorage.setItem('timeline-md-content', markdown.value); localStorage.setItem('timeline-md-name', fileName.value); notice.value = 'Saved locally'; setTimeout(() => notice.value = '', 1800) }
+function reset() { markdown.value = starter; fileName.value = 'product-launch.md'; save() }
+function newTimeline() { markdown.value = '# New timeline\n\n## Act 1 — Start\n- [A1] First event @ 0'; fileName.value = 'untitled-timeline.md'; activeTab.value = 'editor' }
+function loadFile(event) {
+  const file = event.target.files?.[0]; if (!file) return
+  const reader = new FileReader(); reader.onload = () => { markdown.value = reader.result; fileName.value = file.name; activeTab.value = 'editor' }; reader.readAsText(file)
+}
+async function exportPng() {
+  if (!timelineEl.value) return
+  try { const dataUrl = await toPng(timelineEl.value, { pixelRatio: 2, backgroundColor: '#f8fafc' }); const link = document.createElement('a'); link.download = `${fileName.value.replace(/\.md$/i, '')}.png`; link.href = dataUrl; link.click(); notice.value = 'PNG exported'; setTimeout(() => notice.value = '', 1800) } catch { notice.value = 'Export failed' }
+}
+watch(markdown, () => { localStorage.setItem('timeline-md-draft', markdown.value) })
+</script>
+
+<template>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark"><Sparkles :size="17" /></div><span>Timeline<span class="brand-accent">.md</span></span></div>
+      <div class="header-actions"><span v-if="notice" class="notice">{{ notice }}</span><button class="icon-btn" title="Help"><HelpCircle :size="18" /></button><button class="avatar">M</button></div>
+    </header>
+    <main class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-title"><span>MY TIMELINES</span><button class="small-icon" @click="newTimeline"><Plus :size="16" /></button></div>
+        <button class="timeline-file active"><FileText :size="16" /><span>{{ fileName }}</span><span v-if="!saved" class="unsaved">•</span></button>
+        <div class="sidebar-footer"><p>Everything is saved in your browser.</p><button class="reset-btn" @click="reset"><RotateCcw :size="14" /> Reset example</button></div>
+      </aside>
+      <section class="content">
+        <div class="page-heading"><div><p class="eyebrow">VISUAL PLANNING TOOL</p><h1>Build your timeline<span class="heading-dot">.</span></h1><p class="subheading">Write simple Markdown. See your story unfold.</p></div><div class="page-actions"><label class="btn secondary"><Upload :size="16" /> Import .md<input type="file" accept=".md,.markdown,text/markdown" @change="loadFile" hidden /></label><button class="btn primary" @click="exportPng"><Download :size="16" /> Export PNG</button></div></div>
+        <div class="tabs"><button :class="{ selected: activeTab === 'editor' }" @click="activeTab = 'editor'"><FileText :size="15" /> Markdown</button><button :class="{ selected: activeTab === 'preview' }" @click="activeTab = 'preview'"><LayoutTemplate :size="15" /> Preview</button><span class="tab-hint">{{ parsed.lanes.reduce((n, l) => n + l.events.length, 0) }} events · positions relative to first event</span></div>
+        <div v-if="activeTab === 'editor'" class="editor-card"><div class="editor-head"><div><strong>Source</strong><span class="language-pill">MARKDOWN</span></div><button class="save-btn" @click="save"><Save :size="15" /> {{ saved ? 'Saved' : 'Save changes' }}</button></div><textarea v-model="markdown" spellcheck="false" aria-label="Markdown timeline source"></textarea><div class="syntax-help"><span>Tip</span> Use <code>@ number</code> to place an event. Negative and positive values are supported.</div></div>
+        <div class="preview-heading"><div><h2>Live preview</h2><p>Scroll horizontally to explore your timeline.</p></div><div class="range-label">{{ range.min }} <span>→</span> {{ range.max }} <small>units</small></div></div>
+        <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div class="timeline-scroll"><div class="timeline-canvas" :style="{ minWidth: Math.max(720, ticks.length * 86) + 'px' }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div v-for="(lane, index) in parsed.lanes" :key="lane.name + index" class="lane"><div class="lane-label"><span class="lane-number">0{{ index + 1 }}</span><span>{{ lane.name }}</span></div><div class="lane-track"><div v-for="event in lane.events" :key="event.id" class="event" :style="{ left: position(event.position) + '%' }"><div class="event-label"><b>{{ event.id }}</b><span>{{ event.label }}</span></div><div class="event-node"></div></div></div><div v-if="index < parsed.lanes.length - 1" class="connector-layer"><div v-for="event in lane.events" :key="'c' + event.id" class="connector" :style="{ left: position(event.position) + '%' }"><span></span></div></div></div></div></div><div v-if="!parsed.lanes.some(l => l.events.length)" class="empty-state">Add events in Markdown to see them here.</div></div>
+        <div class="format-note"><span class="note-icon">i</span><div><strong>Timeline format</strong><p>Each event uses <code>- [ID] Label @ position</code>. Position is a number relative to your timeline — it can be negative or positive.</p></div></div>
+      </section>
+    </main>
+  </div>
+</template>
