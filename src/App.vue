@@ -1,10 +1,40 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { toPng } from 'html-to-image'
-import { ChevronDown, Download, FileText, HelpCircle, History, LayoutTemplate, Plus, RotateCcw, Sparkles, Upload } from 'lucide-vue-next'
+import { ChevronDown, Download, FileText, Filter, HelpCircle, History, LayoutTemplate, Maximize2, Minimize2, Plus, RotateCcw, Sparkles, Upload } from 'lucide-vue-next'
 
 const page = ref('editor')
 const syntaxGuideOpen = ref(true)
+const previewWidthMode = ref('comfortable')
+const hiddenLanes = ref([])
+const filterFrom = ref('')
+const filterTo = ref('')
+const filtersOpen = ref(false)
+function isSet(v) { return v !== '' && v !== null && v !== undefined && !Number.isNaN(Number(v)) }
+function toggleLane(name) {
+  hiddenLanes.value = hiddenLanes.value.includes(name) ? hiddenLanes.value.filter(n => n !== name) : [...hiddenLanes.value, name]
+}
+function resetFilters() { hiddenLanes.value = []; filterFrom.value = ''; filterTo.value = '' }
+const editorWidth = ref(420)
+let resizing = false
+function startResize() {
+  resizing = true
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onResize)
+  window.addEventListener('mouseup', stopResize)
+}
+function onResize(e) {
+  if (!resizing) return
+  editorWidth.value = Math.min(720, Math.max(280, e.clientX))
+}
+function stopResize() {
+  resizing = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('mousemove', onResize)
+  window.removeEventListener('mouseup', stopResize)
+}
 const changelog = [
   {
     version: '1.3.0',
@@ -69,12 +99,20 @@ const notice = ref('')
 const timelineEl = ref(null)
 
 const parsed = computed(() => parseMarkdown(markdown.value))
-const range = computed(() => {
+const dataRange = computed(() => {
   const values = parsed.value.lanes.flatMap(lane => lane.events.map(event => event.position))
   if (!values.length) return { min: -4, max: 16 }
   const min = Math.min(...values), max = Math.max(...values)
   return { min: Math.min(0, min), max: Math.max(10, max) }
 })
+const range = computed(() => ({
+  min: isSet(filterFrom.value) ? Number(filterFrom.value) : dataRange.value.min,
+  max: isSet(filterTo.value) ? Number(filterTo.value) : dataRange.value.max,
+}))
+const filtersActive = computed(() => hiddenLanes.value.length > 0 || isSet(filterFrom.value) || isSet(filterTo.value))
+const visibleLanes = computed(() => parsed.value.lanes
+  .filter(lane => !hiddenLanes.value.includes(lane.name))
+  .map(lane => ({ ...lane, events: lane.events.filter(event => event.position >= range.value.min && event.position <= range.value.max) })))
 const ticks = computed(() => {
   const span = range.value.max - range.value.min
   const step = span <= 24 ? 2 : span <= 80 ? 10 : span <= 240 ? 25 : span <= 600 ? 100 : 200
@@ -114,16 +152,23 @@ function parseMarkdown(source) {
 }
 function position(value) { return ((value - range.value.min) / (range.value.max - range.value.min)) * 100 }
 
-// Must match the lane layout constants in style.css (label + caption zone + track + gutter).
+// Must match the lane layout constants in style.css (label -> gap -> track -> caption zone -> gutter).
 const LANE_LABEL_H = 24
-const LANE_ZONE_H = 84
+const LANE_LABEL_GAP = 10
 const LANE_TRACK_H = 20
+const LANE_ZONE_H = 84
 const LANE_GUTTER_H = 56
-const LANE_ROW_H = LANE_LABEL_H + LANE_ZONE_H + LANE_TRACK_H + LANE_GUTTER_H
-const LANE_TRACK_CENTER = LANE_LABEL_H + LANE_ZONE_H + LANE_TRACK_H / 2
+const LANE_ROW_H = LANE_LABEL_H + LANE_LABEL_GAP + LANE_TRACK_H + LANE_ZONE_H + LANE_GUTTER_H
+const LANE_TRACK_CENTER = LANE_LABEL_H + LANE_LABEL_GAP + LANE_TRACK_H / 2
+
+const canvasWidth = computed(() => {
+  if (previewWidthMode.value === 'fit') return '100%'
+  const eventCount = visibleLanes.value.reduce((n, lane) => n + lane.events.length, 0)
+  return Math.max(720, ticks.value.length * 90, eventCount * 130) + 'px'
+})
 
 const connectors = computed(() => {
-  const lanes = parsed.value.lanes
+  const lanes = visibleLanes.value
   const laneIndexOf = id => lanes.findIndex(lane => lane.events.some(event => event.id === id))
   const eventById = id => { for (const lane of lanes) { const found = lane.events.find(event => event.id === id); if (found) return found } return null }
   return parsed.value.links.map(link => {
@@ -159,9 +204,16 @@ function exportMarkdown() {
   const blob = new Blob([markdown.value], { type: 'text/markdown;charset=utf-8' })
   const link = document.createElement('a'); link.download = fileName.value || 'timeline.md'; link.href = URL.createObjectURL(blob); link.click(); URL.revokeObjectURL(link.href)
 }
-async function exportPng() {
+async function exportPng(scope = 'view') {
   if (!timelineEl.value) return
+  let snapshot = null
+  if (scope === 'full' && filtersActive.value) {
+    snapshot = { hidden: hiddenLanes.value, from: filterFrom.value, to: filterTo.value }
+    hiddenLanes.value = []; filterFrom.value = ''; filterTo.value = ''
+    await nextTick()
+  }
   try { const dataUrl = await toPng(timelineEl.value, { pixelRatio: 2, backgroundColor: '#f8fafc' }); const link = document.createElement('a'); link.download = `${fileName.value.replace(/\.md$/i, '')}.png`; link.href = dataUrl; link.click(); notice.value = 'PNG exported'; setTimeout(() => notice.value = '', 1800) } catch { notice.value = 'Export failed' }
+  if (snapshot) { hiddenLanes.value = snapshot.hidden; filterFrom.value = snapshot.from; filterTo.value = snapshot.to; await nextTick() }
 }
 watch(markdown, () => { localStorage.setItem('timeline-md-draft', markdown.value) })
 </script>
@@ -184,17 +236,45 @@ watch(markdown, () => { localStorage.setItem('timeline-md-draft', markdown.value
       </aside>
       <section class="content">
         <div class="page-heading"><div><p class="eyebrow">VISUAL PLANNING TOOL</p><h1>Build your timeline<span class="heading-dot">.</span></h1><p class="subheading">Write simple Markdown. See your story unfold.</p></div><div class="page-actions"><label class="btn secondary"><Upload :size="16" /> Import .md<input type="file" accept=".md,.markdown,text/markdown" @change="loadFile" hidden /></label><button class="btn primary" @click="exportPng"><Download :size="16" /> Export PNG</button></div></div>
-        <div class="editor-pane">
+        <div class="editor-pane" :style="{ flexBasis: editorWidth + 'px' }">
           <div class="editor-card"><div class="editor-head"><div class="source-heading"><strong>Story source</strong><span class="language-pill">MARKDOWN</span><label class="inline-action">Import .md<input type="file" accept=".md,.markdown,text/markdown" @change="loadFile" hidden /></label><button class="inline-action" @click="exportMarkdown">Export .md</button></div></div><textarea v-model="markdown" spellcheck="false" aria-label="Markdown timeline source"></textarea><div class="syntax-guide"><button class="syntax-guide-toggle" @click="syntaxGuideOpen = !syntaxGuideOpen"><ChevronDown :size="14" :class="{ collapsed: !syntaxGuideOpen }" /> Quick syntax guide</button><pre v-show="syntaxGuideOpen" class="syntax-guide-body"># Title
 &gt; Subtitle
 ## Lane | #hexcolor
-- [-300] ID: Event — Note
-- [+450] ID: Event — Note
+- [-300] ID: Event &gt; Note
+- [+450] ID: Event &gt; Note
 @link ID1 -&gt; ID2</pre></div></div>
         </div>
+        <div class="resizer" @mousedown="startResize"></div>
         <div class="preview-pane">
-          <div class="preview-heading"><div><h2>Live preview</h2><p>{{ parsed.lanes.reduce((n, l) => n + l.events.length, 0) }} events · positions relative to first event</p></div><div class="preview-actions"><div class="range-label">{{ range.min }} <span>→</span> {{ range.max }} <small>units</small></div><button class="preview-export" @click="exportPng"><Download :size="14" /> Export PNG</button></div></div>
-          <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div v-if="parsed.subtitle" class="timeline-subtitle">{{ parsed.subtitle }}</div><div class="timeline-scroll"><div class="timeline-canvas" :style="{ minWidth: Math.max(720, ticks.length * 86) + 'px' }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div class="lanes-wrap"><div v-for="(lane, index) in parsed.lanes" :key="lane.name + index" class="lane"><div class="lane-label" :style="{ marginLeft: position(laneStart(lane)) + '%' }"><span>{{ lane.name }}</span><em v-if="lane.events.length">starts {{ laneStart(lane) > 0 ? '+' + laneStart(lane) : laneStart(lane) }}</em></div><div class="lane-track" :style="{ backgroundColor: lane.color + '88', marginLeft: position(laneStart(lane)) + '%', width: (100 - position(laneStart(lane))) + '%' }"><div v-for="event in lane.events" :key="event.id" class="event" :class="eventEdge(event, lane)" :style="{ left: lanePosition(event.position, lane) + '%' }"><div class="event-label"><b>{{ event.id }}</b><strong>{{ eventTitle(event.label) }}</strong><small>{{ eventDetail(event.label) }}</small></div><div class="event-node" :style="{ backgroundColor: lane.color }"></div></div></div></div><div class="connector-overlay"><div v-for="c in connectors" :key="c.id" class="connector" :style="{ left: c.left + '%', top: c.top + 'px', height: c.height + 'px' }"><span></span></div></div></div></div></div><div v-if="!parsed.lanes.some(l => l.events.length)" class="empty-state">Add events in Markdown to see them here.</div></div>
+          <div class="preview-heading">
+            <div><h2>Live preview</h2><p>{{ visibleLanes.reduce((n, l) => n + l.events.length, 0) }} events · positions relative to first event</p></div>
+            <div class="preview-actions">
+              <div class="range-label">{{ range.min }} <span>→</span> {{ range.max }} <small>units</small></div>
+              <button class="ghost-toggle" :class="{ active: filtersOpen || filtersActive }" @click="filtersOpen = !filtersOpen"><Filter :size="13" /> Filters<span v-if="filtersActive" class="filter-dot"></span></button>
+              <div class="width-toggle">
+                <button :class="{ selected: previewWidthMode === 'fit' }" title="Fit to screen" @click="previewWidthMode = 'fit'"><Minimize2 :size="13" /></button>
+                <button :class="{ selected: previewWidthMode === 'comfortable' }" title="Comfortable spacing" @click="previewWidthMode = 'comfortable'"><Maximize2 :size="13" /></button>
+              </div>
+              <button v-if="filtersActive" class="preview-export ghost" @click="exportPng('full')">Export full</button>
+              <button class="preview-export" @click="exportPng('view')"><Download :size="14" /> Export PNG</button>
+            </div>
+          </div>
+          <div v-if="filtersOpen" class="filters-panel">
+            <div class="filter-group">
+              <span class="filter-label">Lanes</span>
+              <div class="lane-chips">
+                <button v-for="lane in parsed.lanes" :key="lane.name" class="lane-chip" :class="{ off: hiddenLanes.includes(lane.name) }" @click="toggleLane(lane.name)"><span class="chip-dot" :style="{ backgroundColor: lane.color }"></span>{{ lane.name }}</button>
+              </div>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Time range</span>
+              <input type="number" v-model="filterFrom" :placeholder="String(dataRange.min)" />
+              <span class="filter-to">to</span>
+              <input type="number" v-model="filterTo" :placeholder="String(dataRange.max)" />
+            </div>
+            <button class="filter-reset" @click="resetFilters"><RotateCcw :size="12" /> Reset</button>
+          </div>
+          <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div v-if="parsed.subtitle" class="timeline-subtitle">{{ parsed.subtitle }}</div><div class="timeline-scroll"><div class="timeline-canvas" :style="{ minWidth: canvasWidth }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div class="lanes-wrap"><div v-for="(lane, index) in visibleLanes" :key="lane.name + index" class="lane"><div class="lane-label" :style="{ marginLeft: position(laneStart(lane)) + '%' }"><span>{{ lane.name }}</span><em v-if="lane.events.length">starts {{ laneStart(lane) > 0 ? '+' + laneStart(lane) : laneStart(lane) }}</em></div><div class="lane-track" :style="{ backgroundColor: lane.color + '88', marginLeft: position(laneStart(lane)) + '%', width: (100 - position(laneStart(lane))) + '%' }"><div v-for="event in lane.events" :key="event.id" class="event" :class="eventEdge(event, lane)" :style="{ left: lanePosition(event.position, lane) + '%' }"><div class="event-label"><b>{{ event.id }}</b><strong>{{ eventTitle(event.label) }}</strong><small>{{ eventDetail(event.label) }}</small></div><div class="event-node" :style="{ backgroundColor: lane.color }"></div></div></div></div><div class="connector-overlay"><div v-for="c in connectors" :key="c.id" class="connector" :style="{ left: c.left + '%', top: c.top + 'px', height: c.height + 'px' }"><span></span></div></div></div></div></div><div v-if="!visibleLanes.some(l => l.events.length)" class="empty-state">{{ filtersActive ? 'No events match the current filters.' : 'Add events in Markdown to see them here.' }}</div></div>
         </div>
       </section>
     </main>

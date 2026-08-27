@@ -59,12 +59,20 @@ body { margin: 0; background: #f4eeea; }
 
 /* Markdown source pane */
 .editor-pane {
-  flex: 0 0 420px;
-  min-width: 0;
-  border-right: 1px solid #d9d0ca;
+  flex: 0 0 auto;
+  min-width: 280px;
+  max-width: 720px;
   background: #f4eeea;
   min-height: calc(100vh - 57px);
 }
+.resizer {
+  flex: 0 0 6px;
+  align-self: stretch;
+  cursor: col-resize;
+  background: #d9d0ca;
+  position: relative;
+}
+.resizer:hover, .resizer:active { background: #c9a8b8; }
 .editor-card { padding: 32px 24px; }
 .editor-head { margin-bottom: 12px; }
 .source-heading { display: flex; align-items: center; gap: 8px; color: var(--maroon); }
@@ -113,6 +121,45 @@ body { margin: 0; background: #f4eeea; }
   background: var(--maroon); color: #fff; padding: 8px 12px;
   font: 700 11px Manrope; cursor: pointer; white-space: nowrap;
 }
+.preview-export.ghost { background: #fff; color: var(--maroon); }
+
+.ghost-toggle {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid #e0d3d3; border-radius: 6px; background: #fff; color: #857078;
+  padding: 8px 11px; font: 700 11px Manrope; cursor: pointer; white-space: nowrap; position: relative;
+}
+.ghost-toggle.active { border-color: var(--maroon); color: var(--maroon); background: #f9e9e9; }
+.filter-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--maroon); margin-left: 2px; }
+
+.width-toggle { display: flex; border: 1px solid #e0d3d3; border-radius: 6px; overflow: hidden; }
+.width-toggle button { border: 0; background: #fff; color: #a4939a; padding: 7px 9px; cursor: pointer; display: flex; }
+.width-toggle button + button { border-left: 1px solid #e0d3d3; }
+.width-toggle button.selected { background: #f9e9e9; color: var(--maroon); }
+
+.filters-panel {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 18px;
+  margin: -6px 0 16px; padding: 12px 16px;
+  background: #fff; border: 1px solid #e6dbd8; border-radius: 10px;
+}
+.filter-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.filter-label { font: 700 10px Manrope; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
+.lane-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.lane-chip {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid #e0d3d3; border-radius: 20px; background: #fff; color: #57203e;
+  padding: 5px 10px; font: 600 10px Manrope; cursor: pointer;
+}
+.lane-chip.off { color: #b8adb1; text-decoration: line-through; background: #f7f2f1; }
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.filter-to { font: 10px Manrope; color: var(--muted); }
+.filters-panel input[type="number"] {
+  width: 76px; border: 1px solid #d8cec9; border-radius: 6px; padding: 6px 8px;
+  font: 11px 'DM Mono', monospace; color: var(--maroon-dark);
+}
+.filter-reset {
+  display: flex; align-items: center; gap: 6px; margin-left: auto;
+  border: 0; background: none; color: var(--maroon); font: 700 11px Manrope; cursor: pointer;
+}
 
 .btn { display: flex; align-items: center; gap: 8px; border-radius: 7px; padding: 9px 13px; font: 700 11px Manrope; cursor: pointer; border: 1px solid #e0e5ed; }
 .secondary { background: #fff; color: #546078; border-color: #2e2029; }
@@ -141,22 +188,25 @@ body { margin: 0; background: #f4eeea; }
 
 /* --- Lane layout constants (kept in sync with the JS constants in App.vue) ---
    label row   : 24px, own flow
-   caption zone: 84px reserved above the track for the event card
+   label-track gap: 10px
    track       : 20px
-   gutter      : 56px reserved below the track for connector arrows
-   row height  : 24 + 84 + 20 + 56 = 184px per lane
+   caption zone: 84px reserved below the track for the event card
+   gutter      : 56px reserved after the caption zone for connector arrows
+   row height  : 24 + 10 + 20 + 84 + 56 = 194px per lane
+   Order top to bottom: lane name -> track + event dots -> cards.
 */
 .lanes-wrap { position: relative; }
-.lane { position: relative; min-height: 128px; margin-bottom: 56px; }
+.lane { position: relative; min-height: 138px; margin-bottom: 56px; }
 .lane:last-child { margin-bottom: 0; }
 .lane-label {
   height: 24px; display: flex; align-items: center; gap: 8px;
   color: #926274; font: 700 10px Manrope; letter-spacing: 1px;
   white-space: nowrap; position: relative; z-index: 3;
+  background: #fff;
 }
 .lane-label em { font: 9px 'DM Mono'; font-style: normal; color: #b7a2a8; letter-spacing: 0; margin-left: 4px; }
 .lane-track {
-  margin-top: 84px;
+  margin-top: 10px;
   height: 20px; border-radius: 10px; position: relative;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4);
   z-index: 1;
@@ -167,7 +217,7 @@ body { margin: 0; background: #f4eeea; }
 
 .event-label {
   position: absolute;
-  bottom: 28px;
+  top: 28px;
   left: 50%;
   transform: translateX(-50%);
   width: 190px;
@@ -219,7 +269,6 @@ body { margin: 0; background: #f4eeea; }
 
 /* Responsive */
 @media (max-width: 900px) {
-  .editor-pane { flex-basis: 340px; }
   .editor-card { padding: 24px 14px; }
   .preview-pane { padding: 24px 14px 40px 14px; }
   .timeline-canvas { padding: 0 20px; }
@@ -228,7 +277,9 @@ body { margin: 0; background: #f4eeea; }
 @media (max-width: 640px) {
   .topbar { padding: 0 14px; gap: 10px; }
   .content { display: block; }
-  .editor-pane { min-height: 0; border-right: 0; border-bottom: 1px solid #d9d0ca; }
+  .editor-pane { min-height: 0; max-width: none; }
+  .resizer { display: none; }
+  .editor-pane { border-bottom: 1px solid #d9d0ca; }
   .editor-card textarea { height: 280px; }
   .preview-pane { padding: 24px 14px 40px; }
   .timeline-canvas { min-width: 640px; }
