@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { toPng } from 'html-to-image'
 import { ChevronDown, Download, FileText, Filter, HelpCircle, History, LayoutTemplate, Maximize2, Minimize2, Plus, RotateCcw, Sparkles, Upload } from 'lucide-vue-next'
 
@@ -115,10 +115,15 @@ const visibleLanes = computed(() => parsed.value.lanes
   .map(lane => ({ ...lane, events: lane.events.filter(event => event.position >= range.value.min && event.position <= range.value.max) })))
 const ticks = computed(() => {
   const span = range.value.max - range.value.min
-  const step = span <= 24 ? 2 : span <= 80 ? 10 : span <= 240 ? 25 : span <= 600 ? 100 : 200
+  if (span <= 0) return [range.value.min]
+  const targetCount = 9
+  const magnitude = 10 ** Math.floor(Math.log10(span / targetCount))
+  const residual = (span / targetCount) / magnitude
+  const niceResidual = residual > 5 ? 10 : residual > 2 ? 5 : residual > 1 ? 2 : 1
+  const step = niceResidual * magnitude
   const result = []
   const first = Math.ceil(range.value.min / step) * step
-  for (let i = first; i <= range.value.max; i += step) result.push(i)
+  for (let value = first; value <= range.value.max; value += step) result.push(Math.round(value * 1e6) / 1e6)
   return result
 })
 const saved = computed(() => localStorage.getItem('timeline-md-content') === markdown.value)
@@ -167,26 +172,50 @@ const canvasWidth = computed(() => {
   return Math.max(720, ticks.value.length * 90, eventCount * 130) + 'px'
 })
 
+const canvasEl = ref(null)
+const canvasPxWidth = ref(1000)
+let canvasResizeObserver
+onMounted(() => {
+  canvasResizeObserver = new ResizeObserver(entries => { canvasPxWidth.value = entries[0].contentRect.width })
+  if (canvasEl.value) canvasResizeObserver.observe(canvasEl.value)
+})
+onBeforeUnmount(() => canvasResizeObserver?.disconnect())
+
+const svgHeight = computed(() => visibleLanes.value.length * LANE_ROW_H)
 const connectors = computed(() => {
   const lanes = visibleLanes.value
   const laneIndexOf = id => lanes.findIndex(lane => lane.events.some(event => event.id === id))
   const eventById = id => { for (const lane of lanes) { const found = lane.events.find(event => event.id === id); if (found) return found } return null }
+  const width = canvasPxWidth.value
   return parsed.value.links.map(link => {
     const fromIndex = laneIndexOf(link.from)
     const toIndex = laneIndexOf(link.to)
     const fromEvent = eventById(link.from)
-    if (fromIndex === -1 || toIndex === -1 || toIndex <= fromIndex || !fromEvent) return null
-    const top = fromIndex * LANE_ROW_H + LANE_TRACK_CENTER
-    const bottom = toIndex * LANE_ROW_H + LANE_TRACK_CENTER
-    return { id: `${link.from}-${link.to}`, left: position(fromEvent.position), top, height: bottom - top }
+    const toEvent = eventById(link.to)
+    if (fromIndex === -1 || toIndex === -1 || toIndex <= fromIndex || !fromEvent || !toEvent) return null
+    const x1 = (position(fromEvent.position) / 100) * width
+    const x2 = (position(toEvent.position) / 100) * width
+    const y1 = fromIndex * LANE_ROW_H + LANE_TRACK_CENTER
+    const y2 = toIndex * LANE_ROW_H + LANE_TRACK_CENTER
+    const midY = (y1 + y2) / 2
+    return { id: `${link.from}-${link.to}`, d: `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}` }
   }).filter(Boolean)
 })
 
 function laneStart(lane) { return lane.events.length ? Math.min(...lane.events.map(event => event.position)) : range.value.min }
+function laneGroups(lane) {
+  const map = new Map()
+  for (const event of lane.events) {
+    if (!map.has(event.position)) map.set(event.position, [])
+    map.get(event.position).push(event)
+  }
+  return [...map.entries()].map(([pos, events]) => ({ position: pos, events })).sort((a, b) => a.position - b.position)
+}
 function lanePosition(value, lane) {
   const start = laneStart(lane)
   return ((value - start) / (range.value.max - start || 1)) * 100
 }
+function formatPosition(value) { return value > 0 ? `+${value}` : `${value}` }
 function eventTitle(label) { return label.split(/\s+—\s+|\s+>\s+/)[0] }
 function eventDetail(label) { return label.split(/\s+—\s+|\s+>\s+/).slice(1).join(' > ') }
 function eventEdge(event, lane) {
@@ -274,7 +303,7 @@ watch(markdown, () => { localStorage.setItem('timeline-md-draft', markdown.value
             </div>
             <button class="filter-reset" @click="resetFilters"><RotateCcw :size="12" /> Reset</button>
           </div>
-          <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div v-if="parsed.subtitle" class="timeline-subtitle">{{ parsed.subtitle }}</div><div class="timeline-scroll"><div class="timeline-canvas" :style="{ minWidth: canvasWidth }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div class="lanes-wrap"><div v-for="(lane, index) in visibleLanes" :key="lane.name + index" class="lane"><div class="lane-label" :style="{ marginLeft: position(laneStart(lane)) + '%' }"><span>{{ lane.name }}</span><em v-if="lane.events.length">starts {{ laneStart(lane) > 0 ? '+' + laneStart(lane) : laneStart(lane) }}</em></div><div class="lane-track" :style="{ backgroundColor: lane.color + '88', marginLeft: position(laneStart(lane)) + '%', width: (100 - position(laneStart(lane))) + '%' }"><div v-for="event in lane.events" :key="event.id" class="event" :class="eventEdge(event, lane)" :style="{ left: lanePosition(event.position, lane) + '%' }"><div class="event-label"><b>{{ event.id }}</b><strong>{{ eventTitle(event.label) }}</strong><small>{{ eventDetail(event.label) }}</small></div><div class="event-node" :style="{ backgroundColor: lane.color }"></div></div></div></div><div class="connector-overlay"><div v-for="c in connectors" :key="c.id" class="connector" :style="{ left: c.left + '%', top: c.top + 'px', height: c.height + 'px' }"><span></span></div></div></div></div></div><div v-if="!visibleLanes.some(l => l.events.length)" class="empty-state">{{ filtersActive ? 'No events match the current filters.' : 'Add events in Markdown to see them here.' }}</div></div>
+          <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div v-if="parsed.subtitle" class="timeline-subtitle">{{ parsed.subtitle }}</div><div class="timeline-scroll"><div ref="canvasEl" class="timeline-canvas" :style="{ minWidth: canvasWidth }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div class="lanes-wrap"><div v-for="(lane, index) in visibleLanes" :key="lane.name + index" class="lane"><div class="lane-label" :style="{ marginLeft: position(laneStart(lane)) + '%' }"><span>{{ lane.name }}</span><em v-if="lane.events.length">starts {{ laneStart(lane) > 0 ? '+' + laneStart(lane) : laneStart(lane) }}</em></div><div class="lane-track" :style="{ backgroundColor: lane.color + '88', marginLeft: position(laneStart(lane)) + '%', width: (100 - position(laneStart(lane))) + '%' }"><div v-for="group in laneGroups(lane)" :key="group.position" class="event" :class="eventEdge(group, lane)" :style="{ left: lanePosition(group.position, lane) + '%' }"><div class="event-label"><div v-for="(event, i) in group.events" :key="event.id" class="event-entry" :class="{ divider: i > 0 }"><b>{{ event.id }} <span class="event-time">{{ formatPosition(event.position) }}</span></b><strong>{{ eventTitle(event.label) }}</strong><small>{{ eventDetail(event.label) }}</small></div></div><div class="event-nodes"><div v-for="event in group.events" :key="event.id" class="event-node" :style="{ backgroundColor: lane.color }"></div></div></div></div></div><svg class="connector-overlay" :style="{ height: svgHeight + 'px' }"><defs><marker id="connector-arrow" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#c48ca3" /></marker></defs><path v-for="c in connectors" :key="c.id" :d="c.d" class="connector-path" marker-end="url(#connector-arrow)" /></svg></div></div></div><div v-if="!visibleLanes.some(l => l.events.length)" class="empty-state">{{ filtersActive ? 'No events match the current filters.' : 'Add events in Markdown to see them here.' }}</div></div>
         </div>
       </section>
     </main>

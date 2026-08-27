@@ -209,17 +209,16 @@ body { margin: 0; background: #f4eeea; }
   margin-top: 10px;
   height: 20px; border-radius: 10px; position: relative;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4);
-  z-index: 1;
 }
 
 .event { position: absolute; top: 50%; transform: translate(-50%, -50%); z-index: 4; }
+.event-nodes { display: flex; gap: 3px; }
 .event-node { display: block; width: 22px; height: 22px; border: 3px solid #fff; box-shadow: 0 1px 5px rgba(92, 24, 51, .25); border-radius: 50%; }
 
 .event-label {
   position: absolute;
   top: 28px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   width: 190px;
   padding: 6px 9px 7px;
   background: #fff;
@@ -231,6 +230,7 @@ body { margin: 0; background: #f4eeea; }
   z-index: 5;
 }
 .event-label b { display: block; font: 600 9px 'DM Mono'; color: #a06b83; margin-bottom: 2px; }
+.event-time { color: #c497a8; font-weight: 500; }
 .event-label strong {
   display: block; font: 13px Georgia, serif; font-style: italic; line-height: 1.2;
   color: var(--maroon-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -239,17 +239,11 @@ body { margin: 0; background: #f4eeea; }
   display: block; margin-top: 2px; font: 10px Manrope; color: #937d84; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.event:not(.edge-left):not(.edge-right) .event-label { left: 50%; transform: translateX(-50%); }
-.event.edge-left .event-label { left: 0; transform: none; }
-.event.edge-right .event-label { left: auto; right: 0; transform: none; }
+.event-entry.divider { margin-top: 7px; padding-top: 7px; border-top: 1px solid #f0e4e2; }
+.event.edge-right .event-label { left: auto; right: 0; }
 
-.connector-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
-.connector { position: absolute; border-left: 2px dashed #c48ca3; }
-.connector span {
-  position: absolute; bottom: -1px; left: -5px;
-  border-left: 5px solid transparent; border-right: 5px solid transparent;
-  border-top: 8px solid #c48ca3;
-}
+.connector-overlay { position: absolute; top: 0; left: 0; width: 100%; overflow: visible; pointer-events: none; z-index: 2; }
+.connector-path { fill: none; stroke: #c48ca3; stroke-width: 2; stroke-dasharray: 5 4; }
 
 .format-note { display: none; }
 .empty-state { padding: 40px; text-align: center; color: #a5aebe; font-size: 12px; }
