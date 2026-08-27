@@ -8,16 +8,16 @@ const starter = `# The Nameless Day
 > Twenty years ago, one day vanished from every memory.
 
 ## AKENEDIA | #f5a6ad
-- [-300] A1: The last clear morning — The palace bells ring at dawn.
-- [+80] A2: The sky fractures — A white seam appears above the capital.
+- [-300] A1: The last clear morning > The palace bells ring at dawn.
+- [+80] A2: The sky fractures > A white seam appears above the capital.
 
 ## LOWER CITY | #ebc2d7
-- [-300] B1: The first witness — A courier sees the light descend.
-- [+720] B2: The missing hour — Every clock stops at once.
+- [-300] B1: The first witness > A courier sees the light descend.
+- [+720] B2: The missing hour > Every clock stops at once.
 
 ## HOLLOWED GROUNDS | #adc4f2
-- [+80] C1: Lume awakens — The mines begin to sing.
-- [+720] C2: The memory ends — No record survives beyond this point.
+- [+80] C1: Lume awakens > The mines begin to sing.
+- [+720] C2: The memory ends > No record survives beyond this point.
 
 @link A1 -> B1
 @link A2 -> C1
@@ -79,6 +79,12 @@ function lanePosition(value, lane) {
   const start = laneStart(lane)
   return ((value - start) / (range.value.max - start || 1)) * 100
 }
+function eventTitle(label) { return label.split(/\s+—\s+|\s+>\s+/)[0] }
+function eventDetail(label) { return label.split(/\s+—\s+|\s+>\s+/).slice(1).join(' > ') }
+function eventEdge(event, lane) {
+  const value = lanePosition(event.position, lane)
+  return value > 82 ? 'edge-right' : value < 12 ? 'edge-left' : ''
+}
 function save() { localStorage.setItem('timeline-md-content', markdown.value); localStorage.setItem('timeline-md-name', fileName.value); notice.value = 'Saved locally'; setTimeout(() => notice.value = '', 1800) }
 function reset() { markdown.value = starter; fileName.value = 'product-launch.md'; save() }
 function newTimeline() { markdown.value = '# New timeline\n\n## Act 1 — Start\n- [A1] First event @ 0'; fileName.value = 'untitled-timeline.md'; activeTab.value = 'editor' }
@@ -110,7 +116,7 @@ watch(markdown, () => { localStorage.setItem('timeline-md-draft', markdown.value
         <div class="tabs"><button :class="{ selected: activeTab === 'editor' }" @click="activeTab = 'editor'"><FileText :size="15" /> Markdown</button><button :class="{ selected: activeTab === 'preview' }" @click="activeTab = 'preview'"><LayoutTemplate :size="15" /> Preview</button><span class="tab-hint">{{ parsed.lanes.reduce((n, l) => n + l.events.length, 0) }} events · positions relative to first event</span></div>
         <div v-if="activeTab === 'editor'" class="editor-card"><div class="editor-head"><div><strong>Story source</strong><span class="language-pill">MARKDOWN</span></div><button class="save-btn" @click="save"><Save :size="15" /> {{ saved ? 'Saved locally' : 'Save changes' }}</button></div><textarea v-model="markdown" spellcheck="false" aria-label="Markdown timeline source"></textarea><div class="syntax-help"><span>Tip</span> Use <code>[-300] A1: Event name</code> and <code>## Lane | #color</code>.</div></div>
         <div class="preview-heading"><div><h2>Live preview</h2><p>{{ parsed.lanes.reduce((n, l) => n + l.events.length, 0) }} events · positions relative to first event</p></div><div class="range-label">{{ range.min }} <span>→</span> {{ range.max }} <small>units</small></div></div>
-        <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div v-if="parsed.subtitle" class="timeline-subtitle">{{ parsed.subtitle }}</div><div class="timeline-scroll"><div class="timeline-canvas" :style="{ minWidth: Math.max(720, ticks.length * 86) + 'px' }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div v-for="(lane, index) in parsed.lanes" :key="lane.name + index" class="lane"><div class="lane-label"><span>{{ lane.name }}</span><em v-if="lane.events.length">starts {{ laneStart(lane) > 0 ? '+' + laneStart(lane) : laneStart(lane) }}</em></div><div class="lane-track" :style="{ backgroundColor: lane.color + '88', marginLeft: position(laneStart(lane)) + '%', width: (100 - position(laneStart(lane))) + '%' }"><div v-for="event in lane.events" :key="event.id" class="event" :style="{ left: lanePosition(event.position, lane) + '%' }"><div class="event-label"><b>{{ event.id }}</b><strong>{{ event.label.split(' — ')[0] }}</strong><small>{{ event.label.includes(' — ') ? event.label.split(' — ').slice(1).join(' — ') : '' }}</small></div><div class="event-node" :style="{ backgroundColor: lane.color }"></div></div></div><div v-if="index < parsed.lanes.length - 1" class="connector-layer"><div v-for="link in parsed.links.filter(item => parsed.lanes[index].events.some(e => e.id === item.from))" :key="'c' + link.from" class="connector" :style="{ left: position(parsed.lanes[index].events.find(e => e.id === link.from)?.position || 0) + '%' }"><span></span></div></div></div></div></div><div v-if="!parsed.lanes.some(l => l.events.length)" class="empty-state">Add events in Markdown to see them here.</div></div>
+        <div ref="timelineEl" class="timeline-card"><div class="timeline-title"><div><span class="live-dot"></span> {{ parsed.title }}</div><span class="scale-note">relative scale</span></div><div v-if="parsed.subtitle" class="timeline-subtitle">{{ parsed.subtitle }}</div><div class="timeline-scroll"><div class="timeline-canvas" :style="{ minWidth: Math.max(720, ticks.length * 86) + 'px' }"><div class="axis"><span v-for="tick in ticks" :key="tick" class="tick" :style="{ left: position(tick) + '%' }">{{ tick > 0 ? '+' + tick : tick }}</span></div><div v-for="(lane, index) in parsed.lanes" :key="lane.name + index" class="lane"><div class="lane-label" :style="{ marginLeft: position(laneStart(lane)) + '%' }"><span>{{ lane.name }}</span><em v-if="lane.events.length">starts {{ laneStart(lane) > 0 ? '+' + laneStart(lane) : laneStart(lane) }}</em></div><div class="lane-track" :style="{ backgroundColor: lane.color + '88', marginLeft: position(laneStart(lane)) + '%', width: (100 - position(laneStart(lane))) + '%' }"><div v-for="event in lane.events" :key="event.id" class="event" :class="eventEdge(event, lane)" :style="{ left: lanePosition(event.position, lane) + '%' }"><div class="event-label"><b>{{ event.id }}</b><strong>{{ eventTitle(event.label) }}</strong><small>{{ eventDetail(event.label) }}</small></div><div class="event-node" :style="{ backgroundColor: lane.color }"></div></div></div><div v-if="index < parsed.lanes.length - 1" class="connector-layer"><div v-for="link in parsed.links.filter(item => parsed.lanes[index].events.some(e => e.id === item.from))" :key="'c' + link.from" class="connector" :style="{ left: position(parsed.lanes[index].events.find(e => e.id === link.from)?.position || 0) + '%' }"><span></span></div></div></div></div></div><div v-if="!parsed.lanes.some(l => l.events.length)" class="empty-state">Add events in Markdown to see them here.</div></div>
         <div class="format-note"><span class="note-icon">i</span><div><strong>Timeline format</strong><p>Each event uses <code>- [ID] Label @ position</code>. Position is a number relative to your timeline — it can be negative or positive.</p></div></div>
       </section>
     </main>
